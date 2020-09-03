@@ -1,44 +1,47 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"io"
-	"io/ioutil"
+	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
 )
 
-var gameLog []Action
+var upgrader = websocket.Upgrader{
+	CheckOrigin:     func(*http.Request) bool { return true },
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+}
 
-type Action struct {
-	Type    string
-	Payload map[string]interface{}
+var connections = map[int]*websocket.Conn{}
+var nextId = 1
+
+func handler(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	myId := nextId
+	nextId++
+	connections[myId] = conn
+
+	for {
+		messageType, p, err := conn.ReadMessage()
+		if err != nil {
+			log.Println(err, myId)
+			return
+		}
+		for _, value := range connections {
+			if err := value.WriteMessage(messageType, p); err != nil {
+				log.Println(err, myId)
+				return
+			}
+			log.Println(messageType, myId, string(p))
+		}
+	}
 }
 
 func main() {
-	http.HandleFunc("/tick", startHandler)
-	log.Fatal(http.ListenAndServe(":8080", nil))
-}
-
-func startHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-	w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
-	w.Header().Set("Access-Control-Allow-Credentials", "true")
-	if r.Method == "OPTIONS" {
-		return
-	}
-
-	body, _ := ioutil.ReadAll(r.Body)
-	var action Action
-	err := json.Unmarshal(body, &action)
-	if err != nil {
-		fmt.Println("error:", err)
-	}
-	gameLog = append(gameLog, action)
-	fmt.Println(gameLog)
-
-	out, _ := json.Marshal(gameLog)
-	io.WriteString(w, string(out))
+	http.HandleFunc("/ws", handler)
+	http.ListenAndServe(":8080", nil)
 }
