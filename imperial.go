@@ -7,6 +7,25 @@ import (
 	"net/http"
 )
 
+type Data struct {
+	Type    string                 `json:"type"`
+	Payload map[string]interface{} `json:"payload"`
+}
+
+type RegisterPlayerData struct {
+	Type    string `json:"type"`
+	Payload struct {
+		Name string `json:"name"`
+	} `json:"payload"`
+}
+
+type GetWaitingPlayersData struct {
+	Type    string `json:"type"`
+	Payload struct {
+		Players []string `json:"players"`
+	} `json:"payload"`
+}
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(*http.Request) bool { return true },
 	ReadBufferSize:  1024,
@@ -14,6 +33,7 @@ var upgrader = websocket.Upgrader{
 }
 
 var output map[string]interface{}
+
 var payload map[string][]string
 
 var connections = map[int]*websocket.Conn{}
@@ -36,16 +56,28 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			log.Println(err, myId)
 			return
 		}
-		for _, value := range connections {
-			players[myId] = string(p)
 
-			var playersSlice []string
+		log.Println(string(p))
+
+		for _, value := range connections {
+			var bs map[string]interface{}
+			json.Unmarshal(p, &bs)
+			if bs["type"] == "registerPlayer" {
+				var message RegisterPlayerData
+				json.Unmarshal(p, &message)
+				players[myId] = message.Payload.Name
+			} else {
+				var message GetWaitingPlayersData
+				json.Unmarshal(p, &message)
+			}
+
+			playersSlice := []string{}
 			for _, value := range players {
 				playersSlice = append(playersSlice, value)
 			}
 
 			output = make(map[string]interface{})
-			output["type"] = "registerPlayers"
+			output["type"] = "registeredPlayers"
 			payload = make(map[string][]string)
 			payload["players"] = playersSlice
 			output["payload"] = payload
