@@ -7,11 +7,6 @@ import (
 	"net/http"
 )
 
-type Data struct {
-	Type    string                 `json:"type"`
-	Payload map[string]interface{} `json:"payload"`
-}
-
 type RegisterPlayerData struct {
 	Type    string `json:"type"`
 	Payload struct {
@@ -19,7 +14,7 @@ type RegisterPlayerData struct {
 	} `json:"payload"`
 }
 
-type GetWaitingPlayersData struct {
+type RegisteredPlayersOutput struct {
 	Type    string `json:"type"`
 	Payload struct {
 		Players []string `json:"players"`
@@ -60,15 +55,20 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		log.Println(string(p))
 
 		for _, value := range connections {
-			var bs map[string]interface{}
-			json.Unmarshal(p, &bs)
-			if bs["type"] == "registerPlayer" {
+			var rawMessage map[string]interface{}
+			json.Unmarshal(p, &rawMessage)
+			if rawMessage["type"] == "registerPlayer" {
 				var message RegisterPlayerData
 				json.Unmarshal(p, &message)
 				players[myId] = message.Payload.Name
-			} else {
-				var message GetWaitingPlayersData
+			} else if rawMessage["type"] == "unregisterPlayer" {
+				var message RegisterPlayerData
 				json.Unmarshal(p, &message)
+				for unregisterKey, _ := range players {
+					if players[unregisterKey] == message.Payload.Name {
+						delete(players, unregisterKey)
+					}
+				}
 			}
 
 			playersSlice := []string{}
@@ -76,11 +76,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 				playersSlice = append(playersSlice, value)
 			}
 
-			output = make(map[string]interface{})
-			output["type"] = "registeredPlayers"
-			payload = make(map[string][]string)
-			payload["players"] = playersSlice
-			output["payload"] = payload
+			output := RegisteredPlayersOutput{
+				Type: "registeredPlayers",
+				Payload: struct {
+					Players []string `json:"players"`
+				}{Players: playersSlice},
+			}
 
 			out, _ := json.Marshal(output)
 			if err := value.WriteMessage(messageType, out); err != nil {
